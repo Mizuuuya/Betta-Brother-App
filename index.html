@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Betta Brothers Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #0f172a; font-family: sans-serif; color: white; margin: 0; height: 100vh; overflow: hidden; }
+        .tab-btn { flex: 1; padding: 15px; text-align: center; cursor: pointer; font-weight: bold; font-size: 11px; transition: 0.2s; }
+        .tab-active { color: #3b82f6; border-top: 3px solid #3b82f6; background: #1e293b; }
+        input { color: black !important; }
+    </style>
+</head>
+<body class="flex flex-col">
+
+    <header class="p-4 border-b border-slate-800 bg-slate-900 flex justify-between items-center shadow-lg">
+        <div>
+            <h1 class="text-xl font-black italic text-blue-500 tracking-tighter">BETTA BROTHERS</h1>
+            <div class="flex gap-2 mt-2">
+                <button onclick="exportData()" class="bg-slate-700 px-2 py-1 rounded text-[9px] font-bold">BACKUP</button>
+                <button onclick="document.getElementById('importFile').click()" class="bg-blue-900 px-2 py-1 rounded text-[9px] font-bold">LOAD</button>
+                <input type="file" id="importFile" class="hidden" onchange="importData(event)">
+            </div>
+        </div>
+        <div class="text-right">
+            <p class="text-[9px] text-slate-500 font-bold uppercase">Total Sales</p>
+            <p id="dash-sales" class="text-lg font-black text-green-400">₱0.00</p>
+            <p id="dash-expenses" class="text-[10px] text-red-400">Exp: ₱0.00</p>
+        </div>
+    </header>
+
+    <main class="flex-1 overflow-y-auto p-4 space-y-3" id="main-list">
+        </main>
+
+    <nav class="bg-slate-900 border-t border-slate-800 flex pb-safe">
+        <div onclick="switchTab('sold')" id="nav-sold" class="tab-btn tab-active">SOLD</div>
+        <div onclick="switchTab('expenses')" id="nav-expenses" class="tab-btn">EXPENSES</div>
+        <div onclick="switchTab('dead')" id="nav-dead" class="tab-btn">DEAD LOG</div>
+    </nav>
+
+    <button onclick="openModal()" class="fixed bottom-24 right-6 w-16 h-16 bg-blue-600 text-white rounded-full shadow-2xl flex items-center justify-center text-3xl z-50 border-4 border-slate-900 active:scale-90 transition-transform">
+        <i class="fa-solid fa-plus"></i>
+    </button>
+
+    <div id="modal" class="fixed inset-0 bg-black/80 hidden items-center justify-center p-4 z-[100] backdrop-blur-sm">
+        <div class="bg-white text-slate-900 p-6 rounded-3xl w-full max-w-sm">
+            <h2 id="modal-title" class="text-lg font-black mb-4 uppercase italic">Add Entry</h2>
+            
+            <div class="space-y-4">
+                <input id="in-name" type="text" placeholder="Fish Name / Item" class="w-full p-4 bg-slate-100 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-blue-500">
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <input id="in-qty" type="number" placeholder="Qty" class="w-full p-4 bg-slate-100 rounded-2xl font-bold">
+                    <input id="in-price" type="number" placeholder="Price (PHP)" class="w-full p-4 bg-slate-100 rounded-2xl font-bold">
+                </div>
+
+                <button id="confirm-btn" onclick="saveNow()" class="w-full bg-blue-600 text-white py-5 rounded-2xl font-black uppercase tracking-widest shadow-lg hover:bg-blue-700 transition-colors">
+                    CONFIRM & SAVE
+                </button>
+                
+                <button onclick="closeModal()" class="w-full text-slate-400 font-bold py-2 text-sm">CANCEL</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentTab = 'sold';
+        let db = { sold: [], expenses: [], dead: [] };
+
+        // INITIAL LOAD & CLEANUP
+        try {
+            const saved = localStorage.getItem('betta_db');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                // Ensure no "NaN" values exist in saved data
+                if (parsed.sold) db = parsed;
+            }
+        } catch(e) { console.log("New database started."); }
+
+        function openModal() {
+            document.getElementById('modal-title').innerText = "ADD TO " + currentTab.toUpperCase();
+            document.getElementById('modal').style.display = 'flex';
+            document.getElementById('in-name').focus();
+        }
+
+        function closeModal() {
+            document.getElementById('modal').style.display = 'none';
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            ['sold', 'expenses', 'dead'].forEach(t => {
+                document.getElementById('nav-' + t).classList.toggle('tab-active', t === tab);
+            });
+            render();
+        }
+
+        function saveNow() {
+            const name = document.getElementById('in-name').value;
+            const qVal = document.getElementById('in-qty').value;
+            const pVal = document.getElementById('in-price').value;
+
+            if (!name || !qVal || !pVal) {
+                alert("Please fill in all boxes!");
+                return;
+            }
+
+            const qty = parseFloat(qVal);
+            const price = parseFloat(pVal);
+
+            // Create Entry
+            const entry = {
+                id: Date.now(),
+                date: new Date().toLocaleDateString(),
+                name: name,
+                qty: qty,
+                price: price,
+                total: (qty * price)
+            };
+
+            // Push to DB
+            db[currentTab].push(entry);
+            
+            // Hard Save to Disk
+            localStorage.setItem('betta_db', JSON.stringify(db));
+
+            // UI Cleanup
+            document.getElementById('in-name').value = "";
+            document.getElementById('in-qty').value = "";
+            document.getElementById('in-price').value = "";
+            
+            closeModal();
+            render();
+        }
+
+        function render() {
+            const container = document.getElementById('main-list');
+            container.innerHTML = "";
+            
+            let sales = 0; let exps = 0;
+            
+            // Recalculate Totals (Protects against NaN)
+            db.sold.forEach(i => { if(!isNaN(i.total)) sales += i.total; });
+            db.expenses.forEach(i => { if(!isNaN(i.total)) exps += i.total; });
+            
+            document.getElementById('dash-sales').innerText = "₱" + sales.toLocaleString(undefined, {minimumFractionDigits: 2});
+            document.getElementById('dash-expenses').innerText = "Exp: ₱" + exps.toLocaleString(undefined, {minimumFractionDigits: 2});
+
+            const list = db[currentTab];
+            
+            if (!list || list.length === 0) {
+                container.innerHTML = `<div class="text-center py-20 text-slate-700 font-bold uppercase text-xs tracking-widest">No ${currentTab} records found</div>`;
+                return;
+            }
+
+            // Reverse list so newest is at top
+            [...list].reverse().forEach((item, index) => {
+                const originalIndex = list.length - 1 - index;
+                container.innerHTML += `
+                    <div class="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex justify-between items-center shadow-md">
+                        <div>
+                            <p class="text-[9px] text-slate-500 font-bold uppercase mb-1">${item.date}</p>
+                            <h3 class="font-bold text-slate-200 uppercase tracking-tight">${item.name}</h3>
+                            <p class="text-[11px] text-slate-500 font-medium">${item.qty} pcs × ₱${item.price.toLocaleString()}</p>
+                        </div>
+                        <div class="text-right flex items-center gap-4">
+                            <div>
+                                <p class="text-blue-500 font-black text-lg">₱${item.total.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
+                            </div>
+                            <button onclick="deleteItem(${originalIndex})" class="text-slate-700 hover:text-red-500 transition-colors px-2 text-xl">&times;</button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        function deleteItem(idx) {
+            if(confirm("Delete this record permanently?")) {
+                db[currentTab].splice(idx, 1);
+                localStorage.setItem('betta_db', JSON.stringify(db));
+                render();
+            }
+        }
+
+        function exportData() {
+            const blob = new Blob([JSON.stringify(db)], {type: 'application/json'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `BettaBrothers_Backup.json`;
+            a.click();
+        }
+
+        function importData(e) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                db = JSON.parse(event.target.result);
+                localStorage.setItem('betta_db', JSON.stringify(db));
+                render();
+                alert("Data Loaded!");
+            };
+            reader.readAsText(e.target.files[0]);
+        }
+
+        // Start fresh
+        render();
+    </script>
+</body>
+</html>
